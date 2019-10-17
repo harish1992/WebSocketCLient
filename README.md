@@ -1,3 +1,3 @@
 # WebSocketClient
 
-A description of this package.
+A swift WebSocketClient library
