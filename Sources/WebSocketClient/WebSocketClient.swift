@@ -392,7 +392,7 @@ class WebSocketMessageHandler: ChannelInboundHandler, RemovableChannelHandler {
             if frame.fin {
                 guard let text = data.getString(at: 0, length: data.readableBytes) else { return }
                 if let delegate = client.delegate {
-                    delegate.textRecieved(text: text)
+                    delegate.onText(text: text)
                 } else {
                 client.onTextCallback(text)
                 }
@@ -406,7 +406,7 @@ class WebSocketMessageHandler: ChannelInboundHandler, RemovableChannelHandler {
             if frame.fin {
                 guard let binaryData = data.getData(at: 0, length: data.readableBytes) else { return }
                 if let delegate = client.delegate {
-                    delegate.binaryRecieved(data: binaryData)
+                    delegate.onBinary(data: binaryData)
                 } else {
                     client.onBinaryCallback(binaryData)
                 }
@@ -420,8 +420,9 @@ class WebSocketMessageHandler: ChannelInboundHandler, RemovableChannelHandler {
                 if frame.fin {
                     guard let text = data.getString(at: 0, length: data.readableBytes) else { return }
                     string.append(text)
+                    isText = false
                     if let delegate = client.delegate {
-                        delegate.textRecieved(text: string)
+                        delegate.onText(text: string)
                     } else {
                         client.onTextCallback(string)
                     }
@@ -434,7 +435,7 @@ class WebSocketMessageHandler: ChannelInboundHandler, RemovableChannelHandler {
                     guard let binaryData = data.getData(at: 0, length: data.readableBytes) else { return }
                     binaryBuffer.append(binaryData)
                     if let delegate = client.delegate {
-                        delegate.binaryRecieved(data: binaryBuffer)
+                        delegate.onBinary(data: binaryBuffer)
                     } else {
                         client.onBinaryCallback(binaryBuffer)
                     }
@@ -448,7 +449,7 @@ class WebSocketMessageHandler: ChannelInboundHandler, RemovableChannelHandler {
             let frame = unmaskedData(frame: frame)
             let data =  frame.getData(at: 0, length: frame.readableBytes)!
             if let delegate = client.delegate {
-                delegate.pingRecieved(data: data)
+                delegate.onPing(data: data)
             } else {
                 client.onPingCallback(data)
             }
@@ -459,7 +460,7 @@ class WebSocketMessageHandler: ChannelInboundHandler, RemovableChannelHandler {
                 client.close(data: frame.data.getData(at: 0, length: frame.data.readableBytes) ?? Data())
             }
             if let delegate = client.delegate {
-                delegate.closeMessageRecieved(channel: context.channel, data: data.getData(at: 0, length: data.readableBytes)!)
+                delegate.onClose(channel: context.channel, data: data.getData(at: 0, length: data.readableBytes)!)
             } else {
                 client.onCloseCallback(context.channel, data.getData(at: 0, length: data.readableBytes)!)
             }
@@ -467,7 +468,7 @@ class WebSocketMessageHandler: ChannelInboundHandler, RemovableChannelHandler {
             guard frame.fin else { return }
             let data = frame.data
             if let delegate = client.delegate {
-                delegate.pongRecieved(data: data.getData(at: 0, length: data.readableBytes)!)
+                delegate.onPong(data: data.getData(at: 0, length: data.readableBytes)!)
             } else {
                 client.onPongCallback(frame.opcode, data.getData(at: 0, length: data.readableBytes)!)
             }
@@ -562,7 +563,7 @@ extension HTTPVersion {
 //  User specifies the the context Takeover configuration when creating the WebSocketClient
 //  when not specified both the client and server connections are context takeover enabled
 
-enum ContextTakeover {
+public enum ContextTakeover {
     case none
     case client
     case server
@@ -605,19 +606,19 @@ enum WebSocketClientError: UInt, Error {
 public protocol WebSocketClientDelegate {
 
     // Called when message is recieved from server
-    func textRecieved(text: String)
+    func onText(text: String)
 
     // Called when message is recieved from server
-    func binaryRecieved(data: Data)
+    func onBinary(data: Data)
 
     // Called when ping is recieved from server
-    func pingRecieved(data: Data)
+    func onPing(data: Data)
 
     // Called when pong is recieved from server
-    func pongRecieved(data: Data)
+    func onPong(data: Data)
 
     // Called when close message is recieved from server
-    func closeMessageRecieved(channel: Channel, data: Data)
+    func onClose(channel: Channel, data: Data)
 
     // Called when errored is recieved from server
     func onError(error: Error?, status: HTTPResponseStatus?)
@@ -626,16 +627,16 @@ public protocol WebSocketClientDelegate {
 extension WebSocketClientDelegate {
 
     // Called when message is recieved from server
-    func textRecieved(text: String) {}
+    func onText(text: String) {}
 
     // Called when message is recieved from server
-    func binaryRecieved(data: Data) {}
+    func onBinary(data: Data) {}
 
-    func pingRecieved(data: Data) {}
+    func onPing(data: Data) {}
 
-    func pongRecieved(data: Data) {}
+    func onPong(data: Data) {}
 
-    func closeMessageRecieved(channel: Channel, data: Data) {}
+    func onClose(channel: Channel, data: Data) {}
 
     func onError(error: Error?, status: HTTPResponseStatus?) {}
 }
