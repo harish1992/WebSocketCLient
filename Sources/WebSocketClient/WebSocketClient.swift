@@ -384,11 +384,11 @@ class WebSocketMessageHandler: ChannelInboundHandler, RemovableChannelHandler {
         client.close()
     }
 
-    public func channelRead(context: ChannelHandlerContext, data: NIOAny) {
+    public func channelRead(context: ChannelHandlerContext, data: NIOAny) throws {
         let frame = self.unwrapInboundIn(data)
         switch frame.opcode {
         case .text:
-            var data = unmaskedData(frame: frame)
+            let data = unmaskedData(frame: frame)
             if frame.fin {
                 guard let text = data.getString(at: 0, length: data.readableBytes) else { return }
                 if let delegate = client.delegate {
@@ -402,7 +402,7 @@ class WebSocketMessageHandler: ChannelInboundHandler, RemovableChannelHandler {
                 string = text
             }
         case .binary:
-            var data = unmaskedData(frame: frame)
+            let data = unmaskedData(frame: frame)
             if frame.fin {
                 guard let binaryData = data.getData(at: 0, length: data.readableBytes) else { return }
                 if let delegate = client.delegate {
@@ -415,25 +415,24 @@ class WebSocketMessageHandler: ChannelInboundHandler, RemovableChannelHandler {
                 binaryBuffer = binaryData
             }
         case .continuation:
-            var data = unmaskedData(frame: frame)
+            let data = unmaskedData(frame: frame)
             if isText {
                 if frame.fin {
                     guard let text = data.getString(at: 0, length: data.readableBytes) else { return }
-                    string = string + text
+                    string.append(text)
                     if let delegate = client.delegate {
                         delegate.textRecieved(text: string)
                     } else {
                         client.onTextCallback(string)
                     }
-                    client.onTextCallback(string)
                 } else {
                     guard let text = data.getString(at: 0, length: data.readableBytes) else { return }
-                    string = text + text
+                    string.append(text)
                 }
             } else {
                 if frame.fin {
                     guard let binaryData = data.getData(at: 0, length: data.readableBytes) else { return }
-                    binaryBuffer = binaryBuffer + binaryData
+                    binaryBuffer.append(binaryData)
                     if let delegate = client.delegate {
                         delegate.binaryRecieved(data: binaryBuffer)
                     } else {
@@ -441,7 +440,7 @@ class WebSocketMessageHandler: ChannelInboundHandler, RemovableChannelHandler {
                     }
                 } else {
                     guard let binaryData = data.getData(at: 0, length: data.readableBytes) else { return }
-                    binaryBuffer = binaryBuffer + binaryData
+                    binaryBuffer.append(binaryData)
                 }
             }
         case .ping:
