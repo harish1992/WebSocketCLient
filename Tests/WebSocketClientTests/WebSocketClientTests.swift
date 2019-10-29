@@ -1,5 +1,4 @@
 import XCTest
-import KituraWebSocket
 @testable import WebSocketClient
 
 final class WebSocketClientTests: XCTestCase {
@@ -7,7 +6,7 @@ final class WebSocketClientTests: XCTestCase {
         // This is an example of a functional test case.
         // Use XCTAssert and related functions to verify your tests produce the correct
         // results.
-        let client = WebSocketClient(host: "localhost", port: 8080, uri: "/", requestKey: "test")
+        _ = WebSocketClient(host: "localhost", port: 8080, uri: "/", requestKey: "test")
     }
 
     

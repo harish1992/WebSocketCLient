@@ -20,7 +20,8 @@ import NIOHTTP1
 import NIOWebSocket
 import Dispatch
 import XCTest
-import KituraWebSocket
+import WebSocketCompression
+import NIOFoundationCompat
 
 #if os(Linux)
     import Glibc
@@ -89,7 +90,9 @@ class WebSocketClient {
     var closeSent: Bool = false
 
     // Whether the client is still alive
-    public var isConnected: Bool = false
+    public var isConnected: Bool {
+        return self.channel?.isActive ?? false
+    }
 
     public func connect() {
         do {
@@ -110,8 +113,11 @@ class WebSocketClient {
     // - parameters:
     //     - data: ping frame payload, must be less than 125 bytes
 
-    public func ping(data: ByteBuffer = ByteBufferAllocator().buffer(capacity: 0)) {
-        sendMessage(data: data, opcode: .ping)
+    public func ping(data: Data = Data()) {
+        var buffer = ByteBufferAllocator().buffer(capacity: data.count)
+        buffer.writeBytes(data)
+        send(data: buffer, opcode: .ping, finalFrame: true, compressed: false)
+
     }
 
     // Sends a pong frame to the connected server
@@ -121,8 +127,10 @@ class WebSocketClient {
     // - parameters:
     //     - data: frame payload, must be less than 125 bytes
 
-    public func pong(data: ByteBuffer = ByteBufferAllocator().buffer(capacity: 0)) {
-        sendMessage(data: data, opcode: .pong)
+    public func pong(data: Data = Data()) {
+        var buffer = ByteBufferAllocator().buffer(capacity: data.count)
+        buffer.writeBytes(data)
+        send(data: buffer, opcode: .pong, finalFrame: true, compressed: false)
     }
 
     // This function closes the connection
@@ -132,52 +140,29 @@ class WebSocketClient {
     // - parameters:
     //     - data: close frame payload, must be less than 125 bytes
 
-    public func close(data: ByteBuffer = ByteBufferAllocator().buffer(capacity: 0)) {
+    public func close(data: Data = Data()) {
         closeSent = true
-        sendMessage(data: data, opcode: .connectionClose)
-    }
-
-    // This function sends text-formatted data to the connected server
-    //
-    //             client.sendMessage("Hello World")
-    //
-    // - parameter:
-    //     - `text`: Text-formatted data to be sent to the connected server
-
-    public func sendMessage(_ string: String) {
-        var buffer = ByteBufferAllocator().buffer(capacity: string.count)
-        buffer.writeString(string)
-        sendMessage(data: buffer, opcode: .text)
-    }
-
-    // This function sends binary-formatted data to the connected server
-    //
-    //             client.sendMessage([0x11,0x12])
-    //
-    // - parameter:
-    //     - `binary`: binary-formatted data to be sent to the connected server
-
-    public func sendMessage(_ binary: [UInt8]) {
-        sendMessage(raw: binary, opcode: .binary)
+        var buffer = ByteBufferAllocator().buffer(capacity: data.count)
+        buffer.writeBytes(data)
+        send(data: buffer, opcode: .connectionClose, finalFrame: true, compressed: false)
     }
 
     // This function sends binary-formatted data to the connected server in multiple frames
     //
     //             // server recieves [0x11 ,0x12, 0x13] when following is sent
-    //             client.sendMessage(raw: [0x11,0x12], opcode: .binary, finalFrame: false)
-    //             client.sendMessage(raw: [0x13], opcode: .continuation, finalFrame: true)
+    //             client.sendBinary(data: Data([0x11,0x12]), opcode: .binary, finalFrame: false)
+    //             client.sendMessage(data: Data([0x13]), opcode: .continuation, finalFrame: true)
     //
     // - parameters:
-    //     - raw: raw binary data to be sent in the frame
+    //     - data: raw binary data to be sent in the frame
     //     - opcode: Websocket opcode indicating type of the frame
     //     - finalFrame: Whether the frame to be sent is the last one, by default this is set to `true`
     //     - compressed: Whether to compress the current frame to be sent, by default compression is disabled
 
-    public func sendMessage<T>(raw binary: T, opcode: WebSocketOpcode = .binary, finalFrame: Bool = true, compressed: Bool = false)
-        where T: Collection, T.Element == UInt8 {
+    public func sendBinary(_ binary: Data, opcode: WebSocketOpcode = .binary, finalFrame: Bool = true, compressed: Bool = false) {
         var buffer = ByteBufferAllocator().buffer(capacity: binary.count)
         buffer.writeBytes(binary)
-        sendMessage(data: buffer, opcode: opcode, finalFrame: finalFrame, compressed: compressed)
+        send(data: buffer, opcode: opcode, finalFrame: finalFrame, compressed: compressed)
     }
 
     // This function sends text-formatted data to the connected server in multiple frames
@@ -192,15 +177,13 @@ class WebSocketClient {
     //     - finalFrame: Whether the frame to be sent is the last one, by default this is set to `true`
     //     - compressed: Whether to compress the current frame to be sent, by default this set to `false`
 
-    public func sendMessage<T>(raw data: T, opcode: WebSocketOpcode = .text, finalFrame: Bool = true, compressed: Bool = false)
-        where T: Collection, T.Element == Character {
-        let string = String(data)
+    public func sendText(_ string: String, opcode: WebSocketOpcode = .text, finalFrame: Bool = true, compressed: Bool = false) {
         var buffer = ByteBufferAllocator().buffer(capacity: string.count)
         buffer.writeString(string)
-        sendMessage(data: buffer, opcode: opcode, finalFrame: finalFrame, compressed: compressed)
+        send(data: buffer, opcode: opcode, finalFrame: finalFrame, compressed: compressed)
     }
 
-    public func sendMessage<T>(model: T, opcode: WebSocketOpcode = .text, finalFrame: Bool = true, compressed: Bool = false) where T: Codable {
+    public func send<T: Codable>(model: T, opcode: WebSocketOpcode = .text, finalFrame: Bool = true, compressed: Bool = false) {
         let jsonEncoder = JSONEncoder()
         do {
             let jsonData = try jsonEncoder.encode(model)
@@ -224,7 +207,7 @@ class WebSocketClient {
     //     - finalFrame: Whether the frame to be sent is the last one, by default this is set to `true`
     //     - compressed: Whether to compress the current frame to be sent, by default this set to `false`
 
-    public func sendMessage(data: ByteBuffer, opcode: WebSocketOpcode, finalFrame: Bool = true, compressed: Bool = false) {
+    func sendMessage(data: ByteBuffer, opcode: WebSocketOpcode, finalFrame: Bool = true, compressed: Bool = false) {
         send(data: data, opcode: opcode, finalFrame: finalFrame, compressed: compressed)
     }
 
@@ -292,13 +275,15 @@ class WebSocketClient {
     // Stored callbacks
     var onOpenCallback: (Channel) -> Void = {_ in }
 
-    var onCloseCallback: (Channel, ByteBuffer) -> Void = { _,_ in }
+    var onCloseCallback: (Channel, Data) -> Void = { _,_ in }
 
-    var onMessageCallback: (ByteBuffer) -> Void = { _ in }
+    var onTextCallback: (String) -> Void = { _ in }
 
-    var onPingCallback: (ByteBuffer) -> Void = { _ in }
+    var onBinaryCallback: (Data) -> Void = { _ in }
 
-    var onPongCallback: (WebSocketOpcode, ByteBuffer) -> Void = { _,_ in}
+    var onPingCallback: (Data) -> Void = { _ in }
+
+    var onPongCallback: (WebSocketOpcode, Data) -> Void = { _,_ in}
 
     var onErrorCallBack: (Error?, HTTPResponseStatus?) -> Void = { _,_  in }
 
@@ -316,33 +301,43 @@ class WebSocketClient {
     // Other callback functions are used similarly.
     //
 
-    public func onMessage(_ callback: @escaping (ByteBuffer) -> Void) {
-        executeOnEventLoop { self.onMessageCallback = callback }
+    public func onText(_ callback: @escaping (String) -> Void) {
+//        executeOnEventLoop { self.onMessageCallback = callback }
+        self.onTextCallback = callback
     }
+
+    public func onBinary(_ callback: @escaping (Data) -> Void) {
+    //        executeOnEventLoop { self.onMessageCallback = callback }
+            self.onBinaryCallback = callback
+        }
 
     public func onOpen(_ callback: @escaping (Channel) -> Void) {
-        executeOnEventLoop { self.onOpenCallback = callback }
+//        executeOnEventLoop { self.onOpenCallback = callback }
+        self.onOpenCallback = callback
     }
 
-    public func onClose(_ callback: @escaping (Channel, ByteBuffer) -> Void) {
-        executeOnEventLoop { self.onCloseCallback = callback }
+    public func onClose(_ callback: @escaping (Channel, Data) -> Void) {
+//        executeOnEventLoop { self.onCloseCallback = callback }
+        self.onCloseCallback = callback
     }
 
-    public func onPing(_ callback: @escaping (ByteBuffer) -> Void) {
-        executeOnEventLoop { self.onPingCallback = callback }
+    public func onPing(_ callback: @escaping (Data) -> Void) {
+//        executeOnEventLoop { self.onPingCallback = callback }
+        self.onPingCallback = callback
     }
 
-    public func onPong(_ callback: @escaping (WebSocketOpcode, ByteBuffer) -> Void) {
-        executeOnEventLoop { self.onPongCallback  = callback }
+    public func onPong(_ callback: @escaping (WebSocketOpcode, Data) -> Void) {
+//        executeOnEventLoop { self.onPongCallback  = callback }
+        self.onPongCallback  = callback
     }
 
     public func onError(_ callback: @escaping (Error?, HTTPResponseStatus?) -> Void) {
         self.onErrorCallBack  = callback
     }
 
-    private func executeOnEventLoop(_ code: @escaping () -> Void) {
-        self.channel?.eventLoop.execute(code)
-    }
+//    private func executeOnEventLoop(_ code: @escaping () -> Void) {
+//        self.channel?.eventLoop.execute(code)
+//    }
 
     fileprivate func disconnect()  {
         do {
@@ -360,6 +355,12 @@ class WebSocketMessageHandler: ChannelInboundHandler, RemovableChannelHandler {
     private let client: WebSocketClient
 
     private var buffer: ByteBuffer
+
+    private var binaryBuffer: Data = Data()
+
+    private var isText: Bool = false
+
+    private var string: String = ""
 
     public init(client: WebSocketClient) {
         self.client = client
@@ -383,47 +384,92 @@ class WebSocketMessageHandler: ChannelInboundHandler, RemovableChannelHandler {
         client.close()
     }
 
-    public func channelInactive(context: ChannelHandlerContext) {
-        client.isConnected = context.channel.isActive
-    }
-
-    public func channelRead(context: ChannelHandlerContext, data: NIOAny) {
+    public func channelRead(context: ChannelHandlerContext, data: NIOAny) throws {
         let frame = self.unwrapInboundIn(data)
         switch frame.opcode {
-        case .text, .binary, .continuation:
-            var data = unmaskedData(frame: frame)
-            if frame.opcode == .continuation {
-                buffer.writeBuffer(&data)
-            } else {
-                buffer = data
-            }
+        case .text:
+            let data = unmaskedData(frame: frame)
             if frame.fin {
+                guard let text = data.getString(at: 0, length: data.readableBytes) else { return }
                 if let delegate = client.delegate {
-                    delegate.messageRecieved(data: buffer)
+                    delegate.textRecieved(text: text)
                 } else {
-                    client.onMessageCallback(buffer)
+                client.onTextCallback(text)
+                }
+            } else {
+                isText = true
+                guard let text = data.getString(at: 0, length: data.readableBytes) else { return }
+                string = text
+            }
+        case .binary:
+            let data = unmaskedData(frame: frame)
+            if frame.fin {
+                guard let binaryData = data.getData(at: 0, length: data.readableBytes) else { return }
+                if let delegate = client.delegate {
+                    delegate.binaryRecieved(data: binaryData)
+                } else {
+                    client.onBinaryCallback(binaryData)
+                }
+            } else {
+                guard let binaryData = data.getData(at: 0, length: data.readableBytes) else { return }
+                binaryBuffer = binaryData
+            }
+        case .continuation:
+            let data = unmaskedData(frame: frame)
+            if isText {
+                if frame.fin {
+                    guard let text = data.getString(at: 0, length: data.readableBytes) else { return }
+                    string.append(text)
+                    if let delegate = client.delegate {
+                        delegate.textRecieved(text: string)
+                    } else {
+                        client.onTextCallback(string)
+                    }
+                } else {
+                    guard let text = data.getString(at: 0, length: data.readableBytes) else { return }
+                    string.append(text)
+                }
+            } else {
+                if frame.fin {
+                    guard let binaryData = data.getData(at: 0, length: data.readableBytes) else { return }
+                    binaryBuffer.append(binaryData)
+                    if let delegate = client.delegate {
+                        delegate.binaryRecieved(data: binaryBuffer)
+                    } else {
+                        client.onBinaryCallback(binaryBuffer)
+                    }
+                } else {
+                    guard let binaryData = data.getData(at: 0, length: data.readableBytes) else { return }
+                    binaryBuffer.append(binaryData)
                 }
             }
         case .ping:
+            guard frame.fin else { return }
+            let frame = unmaskedData(frame: frame)
+            let data =  frame.getData(at: 0, length: frame.readableBytes)!
             if let delegate = client.delegate {
-                delegate.pingRecieved(data: unmaskedData(frame: frame))
+                delegate.pingRecieved(data: data)
             } else {
-                client.onPingCallback(unmaskedData(frame: frame))
+                client.onPingCallback(data)
             }
         case .connectionClose:
+            guard frame.fin else { return }
+            let data = frame.data
             if !client.closeSent {
-                client.close(data: frame.data)
+                client.close(data: frame.data.getData(at: 0, length: frame.data.readableBytes) ?? Data())
             }
             if let delegate = client.delegate {
-                delegate.closeMessageRecieved(channel: context.channel, data: frame.data)
+                delegate.closeMessageRecieved(channel: context.channel, data: data.getData(at: 0, length: data.readableBytes)!)
             } else {
-                client.onCloseCallback(context.channel, frame.data)
+                client.onCloseCallback(context.channel, data.getData(at: 0, length: data.readableBytes)!)
             }
         case .pong:
+            guard frame.fin else { return }
+            let data = frame.data
             if let delegate = client.delegate {
-                delegate.pongRecieved(data: frame.data)
+                delegate.pongRecieved(data: data.getData(at: 0, length: data.readableBytes)!)
             } else {
-                client.onPongCallback(frame.opcode, frame.data)
+                client.onPongCallback(frame.opcode, data.getData(at: 0, length: data.readableBytes)!)
             }
         default:
             break
@@ -442,7 +488,6 @@ class HTTPClientHandler: ChannelInboundHandler, RemovableChannelHandler {
     }
 
     func channelActive(context: ChannelHandlerContext) {
-        client.isConnected = context.channel.isActive
         var request = HTTPRequestHead(version: HTTPVersion.http11, method: .GET, uri: client.uri)
         var headers = HTTPHeaders()
         headers.add(name: "Host", value: "\(client.host):\(client.port)")
@@ -560,16 +605,19 @@ enum WebSocketClientError: UInt, Error {
 public protocol WebSocketClientDelegate {
 
     // Called when message is recieved from server
-    func messageRecieved(data: ByteBuffer)
+    func textRecieved(text: String)
+
+    // Called when message is recieved from server
+    func binaryRecieved(data: Data)
 
     // Called when ping is recieved from server
-    func pingRecieved(data: ByteBuffer)
+    func pingRecieved(data: Data)
 
     // Called when pong is recieved from server
-    func pongRecieved(data: ByteBuffer)
+    func pongRecieved(data: Data)
 
     // Called when close message is recieved from server
-    func closeMessageRecieved(channel: Channel, data: ByteBuffer)
+    func closeMessageRecieved(channel: Channel, data: Data)
 
     // Called when errored is recieved from server
     func onError(error: Error?, status: HTTPResponseStatus?)
@@ -577,13 +625,17 @@ public protocol WebSocketClientDelegate {
 
 extension WebSocketClientDelegate {
 
-    func messageRecieved(data: ByteBuffer) {}
+    // Called when message is recieved from server
+    func textRecieved(text: String) {}
 
-    func pingRecieved(data: ByteBuffer) {}
+    // Called when message is recieved from server
+    func binaryRecieved(data: Data) {}
 
-    func pongRecieved(data: ByteBuffer) {}
+    func pingRecieved(data: Data) {}
 
-    func closeMessageRecieved(channel: Channel, data: ByteBuffer) {}
+    func pongRecieved(data: Data) {}
+
+    func closeMessageRecieved(channel: Channel, data: Data) {}
 
     func onError(error: Error?, status: HTTPResponseStatus?) {}
 }
