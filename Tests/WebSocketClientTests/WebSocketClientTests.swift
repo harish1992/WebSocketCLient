@@ -14,3 +14,4 @@ final class WebSocketClientTests: XCTestCase {
         ("testExample", testExample),
     ]
 }
+

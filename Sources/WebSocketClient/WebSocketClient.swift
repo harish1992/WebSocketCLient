@@ -34,15 +34,14 @@ class WebSocketClient {
     let port: Int
     let uri: String
     var channel: Channel? = nil
-    public var negotiateCompression: Bool
-    public var maxWindowBits: Int32
-    public var contextTakeover: ContextTakeover
     public var maxFrameSize: Int
 
     //  This semaphore signals when the client successfully recieves the Connection upgrade response from remote server
     //  Ensures that webSocket frames are sent on channel only after the connection is successfully upgraded to WebSocket Connection
 
     let upgraded = DispatchSemaphore(value: 0)
+
+    let compressionConfig: CompressionConfig?
 
     // Create a new `WebSocketClient`.
     //
@@ -69,16 +68,13 @@ class WebSocketClient {
     //                      Default value is `14`.
 
     public init?(host: String, port: Int, uri: String, requestKey: String,
-                 negotiateCompression: Bool = false, maxWindowBits: Int32 = 15,
-                 contextTakeover: ContextTakeover = .both, maxFrameSize: Int = 24, onOpen: @escaping (Channel?) -> Void = { _ in }) {
+                 compressionConfig: CompressionConfig? = nil, maxFrameSize: Int = 24, onOpen: @escaping (Channel?) -> Void = { _ in }) {
         self.requestKey = requestKey
         self.host = host
         self.port = port
         self.uri = uri
         self.onOpenCallback = onOpen
-        self.negotiateCompression = negotiateCompression
-        self.maxWindowBits = maxWindowBits
-        self.contextTakeover = contextTakeover
+        self.compressionConfig = compressionConfig
         self.maxFrameSize = maxFrameSize
     }
 
@@ -244,15 +240,14 @@ class WebSocketClient {
             self.upgraded.signal()
         }
         let slidingWindowBits = windowSize(header: response.headers)
-        let compressor = PermessageDeflateCompressor(maxWindowBits: slidingWindowBits,
-                                                     noContextTakeOver: self.contextTakeover.clientNoContextTakeover)
-        let decompressor = PermessageDeflateDecompressor(maxWindowBits: slidingWindowBits,
-                                                         noContextTakeOver: self.contextTakeover.serverNoContextTakeover)
-        if self.negotiateCompression {
-            return channel.pipeline.addHandlers([compressor, decompressor, WebSocketMessageHandler(client: self)])
-        } else {
+        guard let compressionConfig = self.compressionConfig else {
             return channel.pipeline.addHandler(WebSocketMessageHandler(client: self))
         }
+        let compressor = PermessageDeflateCompressor(maxWindowBits: slidingWindowBits,
+                                                     noContextTakeOver: compressionConfig.contextTakeover.clientNoContextTakeover)
+        let decompressor = PermessageDeflateDecompressor(maxWindowBits: slidingWindowBits,
+                                                         noContextTakeOver: compressionConfig.contextTakeover.serverNoContextTakeover)
+        return channel.pipeline.addHandlers([compressor, decompressor, WebSocketMessageHandler(client: self)])
     }
 
     private func send(data: ByteBuffer, opcode: WebSocketOpcode, finalFrame: Bool, compressed: Bool) {
@@ -269,7 +264,7 @@ class WebSocketClient {
     // Calculates th LZ77 sliding window size from server response
     private func windowSize(header: HTTPHeaders) -> Int32 {
         return header["Sec-WebSocket-Extensions"].first?.split(separator: ";")
-            .dropFirst().first?.split(separator: "=").last.flatMap({ Int32($0)}) ?? self.maxWindowBits
+            .dropFirst().first?.split(separator: "=").last.flatMap({ Int32($0)}) ?? self.compressionConfig!.maxWindowBits
     }
 
     // Stored callbacks
@@ -484,7 +479,7 @@ class HTTPClientHandler: ChannelInboundHandler, RemovableChannelHandler {
     typealias InboundIn = HTTPClientResponsePart
     unowned var client: WebSocketClient
 
-    init( client: WebSocketClient) {
+    init(client: WebSocketClient) {
         self.client = client
     }
 
@@ -492,7 +487,7 @@ class HTTPClientHandler: ChannelInboundHandler, RemovableChannelHandler {
         var request = HTTPRequestHead(version: HTTPVersion.http11, method: .GET, uri: client.uri)
         var headers = HTTPHeaders()
         headers.add(name: "Host", value: "\(client.host):\(client.port)")
-        if client.negotiateCompression {
+        if client.compressionConfig != nil {
             let value = buildExtensionHeader()
             headers.add(name: "Sec-WebSocket-Extensions", value: value)
         }
@@ -524,10 +519,12 @@ class HTTPClientHandler: ChannelInboundHandler, RemovableChannelHandler {
     //  Builds extension headers based on the configuration of maxwindowbits ,context takeover
     func buildExtensionHeader() -> String {
         var value = "permessage-deflate"
-        if client.maxWindowBits >= 8 && client.maxWindowBits < 15 {
-            value.append("; " + "client_max_window_bits; server_max_window_bits=" + String(client.maxWindowBits))
+        let windowBits: Int32
+        if let config = client.compressionConfig {
+            windowBits = (config.maxWindowBits >= 8 && config.maxWindowBits < 15) ? config.maxWindowBits : 15
+            value.append("; " + "client_max_window_bits; server_max_window_bits=" + String(windowBits))
+            value.append((config.contextTakeover.header()))
         }
-        value.append(client.contextTakeover.header())
         return value
     }
 
@@ -641,3 +638,13 @@ extension WebSocketClientDelegate {
     func onError(error: Error?, status: HTTPResponseStatus?) {}
 }
 
+public struct CompressionConfig {
+
+    var contextTakeover: ContextTakeover
+    var maxWindowBits: Int32
+
+    init(contextTakeover: ContextTakeover = .both, maxWindowBits: Int32 = 15) {
+        self.contextTakeover = contextTakeover
+        self.maxWindowBits = maxWindowBits
+    }
+}
