@@ -59,13 +59,9 @@ class WebSocketClient {
     //     - uri : The "Request-URI" of the GET method, it is used to identify the endpoint of the WebSocket connection
     //     - requestKey: The requestKey sent by client which server has to include while building it's response. This helps ensure that the server
     //                   does not accept connections from non-WebSocket clients
-    //     - negotiateCompression: Parameter to negotiate compression. Setting this parameter to `true` adds the Headers neccesary for negotiating compression
-    //                              with server while building the upgrade request. This parameter is set to `false` by default.
-    //     - maxWindowbits: Size of the LZ77 sliding window used in compression, valid values are between 8..15 bits.
-    //                      An endpoint is by default configured with value of 15.
-    //     - contextTakeover: Parameter to configure the Context Takeover of the WebSocket Connection.
     //     - maxFrameSize : Maximum allowable frame size of WebSocket client is configured using this parameter.
     //                      Default value is `14`.
+    //     - compressionConfig : compression configuration
 
     public init?(host: String, port: Int, uri: String, requestKey: String,
                  compressionConfig: CompressionConfig? = nil, maxFrameSize: Int = 24, onOpen: @escaping (Channel?) -> Void = { _ in }) {
@@ -76,6 +72,19 @@ class WebSocketClient {
         self.onOpenCallback = onOpen
         self.compressionConfig = compressionConfig
         self.maxFrameSize = maxFrameSize
+    }
+
+    public init?(_ url: String) {
+        self.requestKey = "test"
+        let rawUrl = url.components(separatedBy: ":/").last
+        let uri = rawUrl?.split(separator: "/").last
+        let host  = rawUrl?.split(separator: "/").first?.split(separator: ":").first
+        let port = (rawUrl?.split(separator: "/").first?.split(separator: ":").last)
+        self.host = String(host ?? "localhost")
+        self.port = Int(String(port ?? "8080")) ?? 8080
+        self.uri = String(uri ?? "/")
+        self.compressionConfig = nil
+        self.maxFrameSize = 24
     }
 
     let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
