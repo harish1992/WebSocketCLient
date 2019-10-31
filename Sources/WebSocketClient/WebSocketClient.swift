@@ -74,17 +74,29 @@ class WebSocketClient {
         self.maxFrameSize = maxFrameSize
     }
 
-    public init?(_ url: String) {
+    // Create a new `WebSocketClient`.
+    //
+    //
+    //         Example usage:
+    //             let client = WebSocketClient("ws://localhost:8080/chat")
+    //
+    //         // See RFC 7692 for to know more about compression negotiation
+    //         Example usage with compression enabled:
+    //             let client = WebSocketClient(host: "localhost", port: 8080, uri: "/", requestKey: "test", negotiateCompression: true)
+    //
+    // - parameters:
+    //     - url : The "Request-URl" of the GET method, it is used to identify the endpoint of the WebSocket connection
+    //     - compressionConfig : compression configuration
+
+    public init?(_ url: String, config: CompressionConfig? = nil) {
         self.requestKey = "test"
-        let rawUrl = url.components(separatedBy: ":/").last
-        let uri = rawUrl?.split(separator: "/").last
-        let host  = rawUrl?.split(separator: "/").first?.split(separator: ":").first
-        let port = (rawUrl?.split(separator: "/").first?.split(separator: ":").last)
-        self.host = String(host ?? "localhost")
-        self.port = Int(String(port ?? "8080")) ?? 8080
-        self.uri = String(uri ?? "/")
-        self.compressionConfig = nil
-        self.maxFrameSize = 24
+        let rawUrl = URL(string: url)
+        self.host = rawUrl?.host ?? "localhost"
+        self.port = rawUrl?.port ?? 8080
+        self.uri =  rawUrl?.path ?? "/"
+        self.compressionConfig = config
+        self.maxFrameSize = 14
+        print(rawUrl?.scheme)
     }
 
     let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
