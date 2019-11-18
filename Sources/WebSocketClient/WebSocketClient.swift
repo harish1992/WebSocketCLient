@@ -64,7 +64,7 @@ class WebSocketClient {
     //     - compressionConfig : compression configuration
 
     public init?(host: String, port: Int, uri: String, requestKey: String,
-                 compressionConfig: CompressionConfig? = nil, maxFrameSize: Int = 24, onOpen: @escaping (Channel?) -> Void = { _ in }) {
+                 compressionConfig: CompressionConfig? = nil, maxFrameSize: Int = 14, onOpen: @escaping (Channel?) -> Void = { _ in }) {
         self.requestKey = requestKey
         self.host = host
         self.port = port
@@ -96,7 +96,6 @@ class WebSocketClient {
         self.uri =  rawUrl?.path ?? "/"
         self.compressionConfig = config
         self.maxFrameSize = 14
-        print(rawUrl?.scheme)
     }
 
     let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
@@ -256,19 +255,21 @@ class WebSocketClient {
 
     private func upgradePipelineHandler(channel: Channel, response: HTTPResponseHead) -> EventLoopFuture<Void> {
         self.onOpenCallback(channel)
+        let handler = WebSocketMessageHandler(client: self)
         if response.status == .switchingProtocols {
             self.channel = channel
             self.upgraded.signal()
         }
-        let slidingWindowBits = windowSize(header: response.headers)
-        guard let compressionConfig = self.compressionConfig else {
-            return channel.pipeline.addHandler(WebSocketMessageHandler(client: self))
+        if self.compressionConfig == nil {
+            return channel.pipeline.addHandler(handler)
         }
+        let slidingWindowBits = windowSize(header: response.headers)
+
         let compressor = PermessageDeflateCompressor(maxWindowBits: slidingWindowBits,
-                                                     noContextTakeOver: compressionConfig.contextTakeover.clientNoContextTakeover)
+                                                     noContextTakeOver: (self.compressionConfig?.contextTakeover.clientNoContextTakeover)!)
         let decompressor = PermessageDeflateDecompressor(maxWindowBits: slidingWindowBits,
-                                                         noContextTakeOver: compressionConfig.contextTakeover.serverNoContextTakeover)
-        return channel.pipeline.addHandlers([compressor, decompressor, WebSocketMessageHandler(client: self)])
+                                                         noContextTakeOver: (self.compressionConfig?.contextTakeover.serverNoContextTakeover)!)
+        return channel.pipeline.addHandlers([compressor, decompressor, handler])
     }
 
     private func send(data: ByteBuffer, opcode: WebSocketOpcode, finalFrame: Bool, compressed: Bool) {
@@ -318,19 +319,14 @@ class WebSocketClient {
     //
 
     public func onText(_ callback: @escaping (String) -> Void) {
-//        executeOnEventLoop { self.onMessageCallback = callback }
-        self.onTextCallback = callback
+        executeOnEventLoop { self.onTextCallback = callback }
+//        self.onTextCallback = callback
     }
 
     public func onBinary(_ callback: @escaping (Data) -> Void) {
-    //        executeOnEventLoop { self.onMessageCallback = callback }
-            self.onBinaryCallback = callback
+        executeOnEventLoop { self.onBinaryCallback = callback }
+//            self.onBinaryCallback = callback
         }
-
-    public func onOpen(_ callback: @escaping (Channel) -> Void) {
-//        executeOnEventLoop { self.onOpenCallback = callback }
-        self.onOpenCallback = callback
-    }
 
     public func onClose(_ callback: @escaping (Channel, Data) -> Void) {
 //        executeOnEventLoop { self.onCloseCallback = callback }
@@ -351,17 +347,17 @@ class WebSocketClient {
         self.onErrorCallBack  = callback
     }
 
-//    private func executeOnEventLoop(_ code: @escaping () -> Void) {
-//        self.channel?.eventLoop.execute(code)
-//    }
-
-    fileprivate func disconnect()  {
-        do {
-            try self.group.syncShutdownGracefully()
-        } catch {
-            return
-        }
+    private func executeOnEventLoop(_ code: @escaping () -> Void) {
+        self.channel?.eventLoop.execute(code)
     }
+
+//    fileprivate func disconnect()  {
+//        do {
+//            try self.group.syncShutdownGracefully()
+//        } catch {
+//            return
+//        }
+//    }
 }
 
 // WebSocket Handler which recieves data over WebSocket Connection
@@ -398,6 +394,26 @@ class WebSocketMessageHandler: ChannelInboundHandler, RemovableChannelHandler {
             client.onErrorCallBack(error, nil)
         }
         client.close()
+    }
+
+    public func channelReadComplete(context: ChannelHandlerContext) {
+        print("channelReadComplete")
+    }
+
+    public func channelWritabilityChanged(context: ChannelHandlerContext) {
+        print("channelWritabilityChanged")
+    }
+
+    public func channelInactive(context: ChannelHandlerContext) {
+        print("channelInactive")
+    }
+
+    public func handlerRemoved(context: ChannelHandlerContext) {
+        print("handlerRemoved")
+    }
+
+    public func channelUnregistered(context: ChannelHandlerContext) {
+        print("channelUnregistered")
     }
 
     public func channelRead(context: ChannelHandlerContext, data: NIOAny) throws {
@@ -569,7 +585,6 @@ class HTTPClientHandler: ChannelInboundHandler, RemovableChannelHandler {
                 break
             }
         }
-        client.disconnect()
     }
 }
 
@@ -669,3 +684,4 @@ public struct CompressionConfig {
         self.maxWindowBits = maxWindowBits
     }
 }
+ 
