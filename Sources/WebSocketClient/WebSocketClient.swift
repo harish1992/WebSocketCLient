@@ -324,8 +324,8 @@ class WebSocketClient {
     }
 
     public func onBinary(_ callback: @escaping (Data) -> Void) {
-        executeOnEventLoop { self.onBinaryCallback = callback }
-//            self.onBinaryCallback = callback
+//        executeOnEventLoop { self.onBinaryCallback = callback }
+        self.onBinaryCallback = callback
         }
 
     public func onClose(_ callback: @escaping (Channel, Data) -> Void) {
@@ -347,9 +347,9 @@ class WebSocketClient {
         self.onErrorCallBack  = callback
     }
 
-    private func executeOnEventLoop(_ code: @escaping () -> Void) {
-        self.channel?.eventLoop.execute(code)
-    }
+//    private func executeOnEventLoop(_ code: @escaping () -> Void) {
+//        self.channel?.eventLoop.execute(code)
+//    }
 
 //    fileprivate func disconnect()  {
 //        do {
