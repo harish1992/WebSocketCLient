@@ -319,8 +319,8 @@ class WebSocketClient {
     //
 
     public func onText(_ callback: @escaping (String) -> Void) {
-        executeOnEventLoop { self.onTextCallback = callback }
-//        self.onTextCallback = callback
+//        executeOnEventLoop { self.onTextCallback = callback }
+        self.onTextCallback = callback
     }
 
     public func onBinary(_ callback: @escaping (Data) -> Void) {
@@ -396,27 +396,7 @@ class WebSocketMessageHandler: ChannelInboundHandler, RemovableChannelHandler {
         client.close()
     }
 
-    public func channelReadComplete(context: ChannelHandlerContext) {
-        print("channelReadComplete")
-    }
-
-    public func channelWritabilityChanged(context: ChannelHandlerContext) {
-        print("channelWritabilityChanged")
-    }
-
-    public func channelInactive(context: ChannelHandlerContext) {
-        print("channelInactive")
-    }
-
-    public func handlerRemoved(context: ChannelHandlerContext) {
-        print("handlerRemoved")
-    }
-
-    public func channelUnregistered(context: ChannelHandlerContext) {
-        print("channelUnregistered")
-    }
-
-    public func channelRead(context: ChannelHandlerContext, data: NIOAny) throws {
+    public func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         let frame = self.unwrapInboundIn(data)
         switch frame.opcode {
         case .text:

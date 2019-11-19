@@ -7,26 +7,25 @@
 
 import Foundation
 import KituraWebSocket
+import XCTest
 @testable import WebSocketClient
 
 class BasicTests: WebSocketClientTests {
     
-    func testBinaryLongMessage() {
+    func testTextMessage() {
         let echoDelegate = EchoService()
         WebSocket.register(service: echoDelegate, onPath: self.servicePath)
         performServerTest{ expectation in
-            let delegate: WSDelegate = WSDelegate()
+            let textToSend = "Hi"
             let client = WebSocketClient(host: "localhost", port: 8080,
                                          uri: self.servicePath, requestKey: "test")
-            client?.delegate = delegate
+            client?.onText({ text in
+                print(text, "Text recieved")
+                XCTAssertEqual(text, textToSend, "\(text) not equal to \(textToSend)")
+                expectation.fulfill()
+            })
             client?.connect()
-            client?.sendText("Hi")
+            client?.sendText(textToSend)
         }
-    }
-}
-
-class WSDelegate: WebSocketClientDelegate {
-    func onText(text: String) {
-        print(text,"Text in delegate")
     }
 }
