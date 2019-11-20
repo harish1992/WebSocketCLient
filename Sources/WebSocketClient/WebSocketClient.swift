@@ -224,6 +224,9 @@ class WebSocketClient {
     //     - compressed: Whether to compress the current frame to be sent, by default this set to `false`
 
     func sendMessage(data: ByteBuffer, opcode: WebSocketOpcode, finalFrame: Bool = true, compressed: Bool = false) {
+        if opcode == .connectionClose {
+            self.closeSent = true
+        }
         send(data: data, opcode: opcode, finalFrame: finalFrame, compressed: compressed)
     }
 
