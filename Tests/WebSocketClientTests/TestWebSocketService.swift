@@ -26,14 +26,12 @@ public class EchoService: WebSocketService {
     }
 
     public func received(message: Data, from: WebSocketConnection) {
-        print(message)
         from.send(message: message)
     }
 
     public func received(message: String, from: WebSocketConnection) {
         print(from.id)
         from.send(message: message)
-        print(message, "recieved")
     }
 
     public var connectionTimeout: Int? {

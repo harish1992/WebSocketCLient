@@ -95,7 +95,7 @@ class WebSocketClient {
         self.port = rawUrl?.port ?? 8080
         self.uri =  rawUrl?.path ?? "/"
         self.compressionConfig = config
-        self.maxFrameSize = 14
+        self.maxFrameSize = 24
     }
 
     let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
@@ -160,6 +160,7 @@ class WebSocketClient {
         closeSent = true
         var buffer = ByteBufferAllocator().buffer(capacity: data.count)
         buffer.writeBytes(data)
+        print(data)
         send(data: buffer, opcode: .connectionClose, finalFrame: true, compressed: false)
     }
 
@@ -204,7 +205,6 @@ class WebSocketClient {
         do {
             let jsonData = try jsonEncoder.encode(model)
             let string = String(data: jsonData, encoding: .utf8)!
-            print("String:",string)
             var buffer = ByteBufferAllocator().buffer(capacity: string.count)
             buffer.writeString(string)
             sendMessage(data: buffer, opcode: opcode, finalFrame: finalFrame, compressed: compressed)
