@@ -207,7 +207,7 @@ class WebSocketClient {
             let string = String(data: jsonData, encoding: .utf8)!
             var buffer = ByteBufferAllocator().buffer(capacity: string.count)
             buffer.writeString(string)
-            sendMessage(data: buffer, opcode: opcode, finalFrame: finalFrame, compressed: compressed)
+            send(data: buffer, opcode: opcode, finalFrame: finalFrame, compressed: compressed)
         } catch let error{
             print(error)
         }
@@ -223,11 +223,13 @@ class WebSocketClient {
     //     - finalFrame: Whether the frame to be sent is the last one, by default this is set to `true`
     //     - compressed: Whether to compress the current frame to be sent, by default this set to `false`
 
-    func sendMessage(data: ByteBuffer, opcode: WebSocketOpcode, finalFrame: Bool = true, compressed: Bool = false) {
+    public func sendMessage(data: Data, opcode: WebSocketOpcode, finalFrame: Bool = true, compressed: Bool = false) {
+        var buffer = ByteBufferAllocator().buffer(capacity: data.count)
+        buffer.writeBytes(data)
         if opcode == .connectionClose {
             self.closeSent = true
         }
-        send(data: data, opcode: opcode, finalFrame: finalFrame, compressed: compressed)
+        send(data: buffer, opcode: opcode, finalFrame: finalFrame, compressed: compressed)
     }
 
     //  This function generates masking key to mask the payload to be sent on the WebSocketframe
@@ -268,11 +270,11 @@ class WebSocketClient {
         }
         let slidingWindowBits = windowSize(header: response.headers)
 
-        let compressor = PermessageDeflateCompressor(maxWindowBits: slidingWindowBits,
-                                                     noContextTakeOver: (self.compressionConfig?.contextTakeover.clientNoContextTakeover)!)
-        let decompressor = PermessageDeflateDecompressor(maxWindowBits: slidingWindowBits,
-                                                         noContextTakeOver: (self.compressionConfig?.contextTakeover.serverNoContextTakeover)!)
-        return channel.pipeline.addHandlers([compressor, decompressor, handler])
+        let deflater = PermessageDeflateCompressor(noContextTakeOver: (self.compressionConfig?.contextTakeover.clientNoContextTakeover)!,
+                                                     maxWindowBits: slidingWindowBits)
+        let inflater = PermessageDeflateDecompressor(noContextTakeOver: (self.compressionConfig?.contextTakeover.serverNoContextTakeover)!,
+                                                     maxWindowBits: slidingWindowBits)
+        return channel.pipeline.addHandlers([WebSocketCompressor(deflater: deflater), WebSocketDecompressor(inflater: inflater), handler])
     }
 
     private func send(data: ByteBuffer, opcode: WebSocketOpcode, finalFrame: Bool, compressed: Bool) {

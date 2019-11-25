@@ -17,9 +17,30 @@ import LoggerAPI
 public class EchoService: WebSocketService {
     var connectCount = 0
     var disconnectCount = 0
+    let connectionTimeOut: Int?
+    private var _connectionId = ""
+    let connectionIDAccessQueue: DispatchQueue = DispatchQueue(label: "Connection ID Access Queue")
+
+    var connectionId: String {
+        get {
+            return connectionIDAccessQueue.sync {
+                return _connectionId
+            }
+        }
+        set {
+            connectionIDAccessQueue.sync {
+                _connectionId = newValue
+            }
+        }
+    }
+
+    public init(connectionTimeOut: Int? = nil){
+        self.connectionTimeOut = connectionTimeOut
+    }
 
     public func connected(connection: WebSocketConnection) {
-        print("connection")
+        connectionId = connection.id
+        connection.ping()
     }
 
     public func disconnected(connection: WebSocketConnection, reason: WebSocketCloseReasonCode) {
@@ -35,7 +56,7 @@ public class EchoService: WebSocketService {
     }
 
     public var connectionTimeout: Int? {
-        return 60
+        return connectionTimeOut
     }
 }
 
