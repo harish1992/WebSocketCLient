@@ -51,7 +51,6 @@ public class EchoService: WebSocketService {
     }
 
     public func received(message: String, from: WebSocketConnection) {
-        print(from.id)
         from.send(message: message)
     }
 

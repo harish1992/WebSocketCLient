@@ -194,4 +194,26 @@ class ProtocolError: WebSocketClientTests {
             }
         }
     }
+
+    func testInvalidUTFCloseMessage() {
+        let echoDelegate = EchoService()
+        WebSocket.register(service: echoDelegate, onPath: self.servicePath)
+        performServerTest { expectation in
+            let testString = "Testing, 1,2,3"
+            var payload = ByteBufferAllocator().buffer(capacity: 8)
+            payload.writeInteger(WebSocketCloseReasonCode.normal.code())
+            payload.writeBytes(testString.data(using: .utf16)!)
+            guard let client = WebSocketClient("http://localhost:8080/wstester") else { return }
+            client.connect()
+            client.close(data: payload.getData(at: 0, length: payload.readableBytes)!)
+            client.onClose { channel, data in
+                var expectedPayload = ByteBufferAllocator().buffer(capacity: 8)
+                expectedPayload.writeInteger(WebSocketCloseReasonCode.invalidDataContents.code())
+                expectedPayload.writeString("Failed to convert received close message to UTF-8 String")
+                let expected = expectedPayload.getData(at: 0, length: expectedPayload.readableBytes)
+                XCTAssertEqual(data, expected, "The payload \(data) is not equal to the expected payload \(expected).")
+                expectation.fulfill()
+            }
+        }
+    }
 }

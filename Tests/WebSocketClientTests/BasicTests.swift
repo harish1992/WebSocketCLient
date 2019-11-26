@@ -23,7 +23,6 @@ class BasicTests: WebSocketClientTests {
             let client = WebSocketClient(host: "localhost", port: 8080,
                                          uri: self.servicePath, requestKey: "test")
             client?.onText({ text in
-                print(text, "Text recieved")
                 XCTAssertEqual(text, textToSend, "\(text) not equal to \(textToSend)")
                 expectation.fulfill()
             })
@@ -106,7 +105,6 @@ class BasicTests: WebSocketClientTests {
             }
             client.connect()
             client.sendBinary(payload, compressed: true)
-            print(client.channel?.pipeline)
         })
     }
 

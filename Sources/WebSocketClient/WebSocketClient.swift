@@ -160,7 +160,6 @@ class WebSocketClient {
         closeSent = true
         var buffer = ByteBufferAllocator().buffer(capacity: data.count)
         buffer.writeBytes(data)
-        print(data)
         send(data: buffer, opcode: .connectionClose, finalFrame: true, compressed: false)
     }
 
@@ -278,7 +277,6 @@ class WebSocketClient {
     }
 
     private func send(data: ByteBuffer, opcode: WebSocketOpcode, finalFrame: Bool, compressed: Bool) {
-        print(data)
         let mask = self.maskFrame ? self.generateMaskingKey(): nil
         let frame = WebSocketFrame(fin: finalFrame, rsv1: compressed, opcode: opcode, maskKey: mask, data: data)
         guard let channel = channel else { return }

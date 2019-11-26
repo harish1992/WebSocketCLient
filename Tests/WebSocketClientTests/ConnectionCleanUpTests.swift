@@ -40,7 +40,6 @@ class ConnectionCleanUptests: WebSocketClientTests {
                 }
                 client.connect()
                 sleep(4)
-                print(client.isConnected)
                 XCTAssertFalse(client.isConnected)
                 expectation.fulfill()
             }
